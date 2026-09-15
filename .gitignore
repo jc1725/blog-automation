@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+*.log
+.DS_Store
+npm-debug.log*
+
+# 배포 저장소에는 불필요한 로컬 산출물
+.cowork/
+COWORK_SETUP.md
+Claude outputs/
+logs/
