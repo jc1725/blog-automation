@@ -9,10 +9,14 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
 import { env } from '../config/env';
+import { fetchProductImage, buildProductImageHtml } from '../services/productImage';
 
 export const postsRouter = Router();
 
-const createSchema = z.object({ keyword: z.string().min(1, '키워드는 필수입니다.') });
+const createSchema = z.object({
+  keyword: z.string().min(1, '키워드는 필수입니다.'),
+  productUrl: z.string().url().optional(),
+});
 const publishSchema = z.object({
   target: z.enum(['naver', 'blogger', 'both']).default('both'),
 });
@@ -29,7 +33,7 @@ const adsSchema = z.object({
 postsRouter.post(
   '/create',
   asyncHandler(async (req, res) => {
-    const { keyword } = createSchema.parse(req.body);
+    const { keyword, productUrl } = createSchema.parse(req.body);
 
     const post = await BlogPost.create({ keyword, status: 'generating' });
 
@@ -39,6 +43,17 @@ postsRouter.post(
       post.summary = generated.summary;
       post.content = generated.content;
       post.tags = generated.tags;
+
+      // 쿠팡 상품 링크가 주어지면 상품 대표 이미지를 본문 상단에 삽입.
+      // 이미지 조회에 실패해도 원고 생성 자체는 계속 진행한다.
+      if (productUrl) {
+        const imageUrl = await fetchProductImage(productUrl);
+        if (imageUrl) {
+          post.content = `${buildProductImageHtml(imageUrl, post.title)}\n${post.content}`;
+        } else {
+          logger.warn(`상품 이미지 삽입 생략 (조회 실패): ${productUrl}`);
+        }
+      }
 
       // 모든 신규 포스트 상단에 기본 배너(쿠팡 파트너스 등) 자동 삽입.
       // DEFAULT_TOP_BANNER_HTML을 빈 값으로 설정하면 자동 삽입을 끌 수 있다.
