@@ -16,6 +16,9 @@ export const postsRouter = Router();
 const createSchema = z.object({
   keyword: z.string().min(1, '키워드는 필수입니다.'),
   productUrl: z.string().url().optional(),
+  // 이미 알아낸 이미지 URL을 직접 넘기면 서버에서 상품 페이지를 다시 가져오지 않고 바로 사용한다.
+  // (쿠팡은 서버 측 fetch를 403으로 차단하는 경우가 많아, 브라우저에서 미리 추출한 이미지 URL을 넘기는 용도)
+  imageUrl: z.string().url().optional(),
 });
 const publishSchema = z.object({
   target: z.enum(['naver', 'blogger', 'both']).default('both'),
@@ -33,7 +36,7 @@ const adsSchema = z.object({
 postsRouter.post(
   '/create',
   asyncHandler(async (req, res) => {
-    const { keyword, productUrl } = createSchema.parse(req.body);
+    const { keyword, productUrl, imageUrl: providedImageUrl } = createSchema.parse(req.body);
 
     const post = await BlogPost.create({ keyword, status: 'generating' });
 
@@ -44,15 +47,14 @@ postsRouter.post(
       post.content = generated.content;
       post.tags = generated.tags;
 
-      // 쿠팡 상품 링크가 주어지면 상품 대표 이미지를 본문 상단에 삽입.
+      // 이미지 URL이 직접 주어졌으면 그걸 쓰고, 아니면 productUrl에서 조회를 시도한다.
+      // (쿠팡 등 서버 측 fetch를 차단하는 사이트는 imageUrl로 우회)
       // 이미지 조회에 실패해도 원고 생성 자체는 계속 진행한다.
-      if (productUrl) {
-        const imageUrl = await fetchProductImage(productUrl);
-        if (imageUrl) {
-          post.content = `${buildProductImageHtml(imageUrl, post.title)}\n${post.content}`;
-        } else {
-          logger.warn(`상품 이미지 삽입 생략 (조회 실패): ${productUrl}`);
-        }
+      const resolvedImageUrl = providedImageUrl || (productUrl ? await fetchProductImage(productUrl) : null);
+      if (resolvedImageUrl) {
+        post.content = `${buildProductImageHtml(resolvedImageUrl, post.title)}\n${post.content}`;
+      } else if (productUrl) {
+        logger.warn(`상품 이미지 삽입 생략 (조회 실패): ${productUrl}`);
       }
 
       // 모든 신규 포스트 상단에 기본 배너(쿠팡 파트너스 등) 자동 삽입.
