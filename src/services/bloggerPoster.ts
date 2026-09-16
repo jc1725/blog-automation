@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { AppError } from '../utils/AppError';
+import { ensureReadableStyles } from './contentGenerator';
 
 export interface BloggerPublishResult {
   url: string;
@@ -58,6 +59,54 @@ export async function postToBlogger(title: string, contentHtml: string, labels: 
     logger.error(`Blogger 발행 실패: ${(error as Error).message}`);
     throw new AppError(`Blogger 발행 중 오류가 발생했습니다: ${(error as Error).message}`, 502);
   }
+}
+
+/**
+ * 이미 발행된 포스트를 URL로 찾아 본문 HTML을 통째로 교체(업데이트)한다.
+ * 테마 CSS 문제 등으로 발행 후 본문을 고쳐야 할 때 사용.
+ */
+export async function updateBloggerPostContent(url: string, contentHtml: string): Promise<BloggerPublishResult> {
+  if (!env.google.bloggerBlogId) {
+    throw new AppError('GOOGLE_BLOGGER_BLOG_ID가 설정되지 않았습니다.', 500);
+  }
+  const path = new URL(url).pathname;
+  const auth = getOAuthClient();
+  const blogger = google.blogger({ version: 'v3', auth });
+
+  const got = await blogger.posts.getByPath({ blogId: env.google.bloggerBlogId, path });
+  const existing = got.data;
+  if (!existing.id) throw new AppError('해당 URL의 Blogger 포스트를 찾을 수 없습니다.', 404);
+
+  const updated = await blogger.posts.update({
+    blogId: env.google.bloggerBlogId,
+    postId: existing.id,
+    requestBody: { title: existing.title, content: contentHtml },
+  });
+
+  if (!updated.data.url || !updated.data.id) {
+    throw new AppError('Blogger 업데이트 응답에 url/id가 없습니다.', 502);
+  }
+  return { url: updated.data.url, postId: updated.data.id };
+}
+
+/**
+ * 이미 발행된 포스트를 URL로 찾아, 현재 본문에 안전한 글자색 인라인 스타일을
+ * 보정해서 다시 저장한다 (테마의 기본 글자색이 흰색 등이라 본문이 안 보이는 문제 대응).
+ */
+export async function fixBloggerPostStyles(url: string): Promise<BloggerPublishResult> {
+  if (!env.google.bloggerBlogId) {
+    throw new AppError('GOOGLE_BLOGGER_BLOG_ID가 설정되지 않았습니다.', 500);
+  }
+  const path = new URL(url).pathname;
+  const auth = getOAuthClient();
+  const blogger = google.blogger({ version: 'v3', auth });
+
+  const got = await blogger.posts.getByPath({ blogId: env.google.bloggerBlogId, path });
+  const existing = got.data;
+  if (!existing.id) throw new AppError('해당 URL의 Blogger 포스트를 찾을 수 없습니다.', 404);
+
+  const fixed = ensureReadableStyles(existing.content || '');
+  return updateBloggerPostContent(url, fixed);
 }
 
 /**

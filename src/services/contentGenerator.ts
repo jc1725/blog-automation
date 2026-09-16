@@ -85,7 +85,7 @@ export async function generateBlogContent(keyword: string): Promise<GeneratedCon
  * 지정되어 본문 배경 위에서 글씨가 보이지 않는 문제가 있었다. 테마에 의존하지 않도록
  * 생성된 본문의 헤딩/문단 태그에 안전한 글자색을 인라인 style로 강제 지정한다.
  */
-function ensureReadableStyles(html: string): string {
+export function ensureReadableStyles(html: string): string {
   return html.replace(/<(h2|h3|p|li)(\s[^>]*)?>/gi, (match, tag, attrs = '') => {
     if (/style\s*=/.test(attrs)) {
       // 이미 style이 있으면 color만 없을 때 추가

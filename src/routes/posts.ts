@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { BlogPost } from '../models/BlogPost';
 import { generateBlogContent } from '../services/contentGenerator';
 import { postToNaverBlog } from '../services/naverBlogPoster';
-import { postToBlogger } from '../services/bloggerPoster';
+import { postToBlogger, fixBloggerPostStyles } from '../services/bloggerPoster';
 import { buildAdCode, insertAdIntoContent, AdPosition } from '../services/adInjector';
 import { asyncHandler } from '../middleware/errorHandler';
 import { AppError } from '../utils/AppError';
@@ -16,6 +16,10 @@ const createSchema = z.object({ keyword: z.string().min(1, '키워드는 필수�
 const publishSchema = z.object({
   target: z.enum(['naver', 'blogger', 'both']).default('both'),
 });
+const fixStylesSchema = z.object({
+  url: z.string().url('올바른 URL이 아닙니다.'),
+});
+
 const adsSchema = z.object({
   code: z.string().optional(),
   position: z.enum(['top', 'middle', 'bottom']).default('bottom'),
@@ -124,6 +128,16 @@ postsRouter.post(
     await post.save();
 
     res.json({ success: errors.length === 0, data: post, results, errors });
+  })
+);
+
+/** POST /api/posts/fix-blogger-styles - 이미 발행된 Blogger 글의 글자색(테마 문제)을 보정 */
+postsRouter.post(
+  '/fix-blogger-styles',
+  asyncHandler(async (req, res) => {
+    const { url } = fixStylesSchema.parse(req.body ?? {});
+    const result = await fixBloggerPostStyles(url);
+    res.json({ success: true, data: result });
   })
 );
 
