@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { BlogPost } from '../models/BlogPost';
-import { generateBlogContent } from '../services/contentGenerator';
+import { generateBlogContent, ensureReadableStyles, linkifyGasyn } from '../services/contentGenerator';
 import { postToNaverBlog } from '../services/naverBlogPoster';
 import { postToBlogger, fixBloggerPostStyles } from '../services/bloggerPoster';
 import { buildAdCode, insertAdIntoContent, AdPosition } from '../services/adInjector';
@@ -19,6 +19,14 @@ const createSchema = z.object({
   // 이미 알아낸 이미지 URL을 직접 넘기면 서버에서 상품 페이지를 다시 가져오지 않고 바로 사용한다.
   // (쿠팡은 서버 측 fetch를 403으로 차단하는 경우가 많아, 브라우저에서 미리 추출한 이미지 URL을 넘기는 용도)
   imageUrl: z.string().url().optional(),
+});
+const importSchema = z.object({
+  // 이미 작성된 원고(직접 쓴 글, 다른 도구로 만든 초안 등)를 Claude 재생성 없이 그대로 등록할 때 사용.
+  keyword: z.string().min(1, '키워드는 필수입니다.'),
+  title: z.string().min(1, '제목은 필수입니다.'),
+  content: z.string().min(1, '본문은 필수입니다.'),
+  summary: z.string().optional(),
+  tags: z.array(z.string()).optional(),
 });
 const publishSchema = z.object({
   target: z.enum(['naver', 'blogger', 'both']).default('both'),
@@ -59,6 +67,38 @@ postsRouter.post(
 
       // 모든 신규 포스트 상단에 기본 배너(쿠팡 파트너스 등) 자동 삽입.
       // DEFAULT_TOP_BANNER_HTML을 빈 값으로 설정하면 자동 삽입을 끌 수 있다.
+      if (env.ads.defaultTopBannerHtml) {
+        post.content = insertAdIntoContent(post.content, env.ads.defaultTopBannerHtml, 'top');
+        post.ads.push({ code: env.ads.defaultTopBannerHtml, insertedAt: new Date(), position: 'top' });
+      }
+
+      post.status = 'ready';
+      await post.save();
+    } catch (error) {
+      post.status = 'failed';
+      post.errorMessage = (error as Error).message;
+      await post.save();
+      throw error;
+    }
+
+    res.status(201).json({ success: true, data: post });
+  })
+);
+
+/** POST /api/posts/import - 이미 작성된 원고를 그대로 등록 (Claude 재생성 없이 배너/스타일/가신링크만 적용) */
+postsRouter.post(
+  '/import',
+  asyncHandler(async (req, res) => {
+    const { keyword, title, content, summary, tags } = importSchema.parse(req.body);
+
+    const post = await BlogPost.create({ keyword, status: 'generating' });
+
+    try {
+      post.title = title;
+      post.summary = summary ?? '';
+      post.tags = tags ?? [];
+      post.content = linkifyGasyn(ensureReadableStyles(content));
+
       if (env.ads.defaultTopBannerHtml) {
         post.content = insertAdIntoContent(post.content, env.ads.defaultTopBannerHtml, 'top');
         post.ads.push({ code: env.ads.defaultTopBannerHtml, insertedAt: new Date(), position: 'top' });
