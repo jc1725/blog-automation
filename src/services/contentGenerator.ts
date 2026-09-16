@@ -80,6 +80,22 @@ export async function generateBlogContent(keyword: string): Promise<GeneratedCon
   }
 }
 
+/**
+ * 블로그 테마(특히 Blogger 테마)의 기본 h2/h3/p 글자색이 테마에 따라 흰색 등으로
+ * 지정되어 본문 배경 위에서 글씨가 보이지 않는 문제가 있었다. 테마에 의존하지 않도록
+ * 생성된 본문의 헤딩/문단 태그에 안전한 글자색을 인라인 style로 강제 지정한다.
+ */
+function ensureReadableStyles(html: string): string {
+  return html.replace(/<(h2|h3|p|li)(\s[^>]*)?>/gi, (match, tag, attrs = '') => {
+    if (/style\s*=/.test(attrs)) {
+      // 이미 style이 있으면 color만 없을 때 추가
+      if (/color\s*:/.test(attrs)) return match;
+      return `<${tag}${attrs.replace(/style="([^"]*)"/i, 'style="$1;color:#222222;"')}>`;
+    }
+    return `<${tag}${attrs} style="color:#222222;">`;
+  });
+}
+
 /** Claude 응답에서 JSON만 안전하게 추출/파싱한다 (코드블록으로 감싸져 오는 경우 대비) */
 function parseGeneratedJson(raw: string): GeneratedContent {
   let text = raw.trim();
@@ -105,7 +121,7 @@ function parseGeneratedJson(raw: string): GeneratedContent {
   return {
     title: String(data.title),
     summary: String(data.summary ?? ''),
-    content: String(data.content),
+    content: ensureReadableStyles(String(data.content)),
     tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
   };
 }
