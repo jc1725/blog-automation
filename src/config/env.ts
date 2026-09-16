@@ -46,4 +46,7 @@ export const env = {
       process.env.DEFAULT_TOP_BANNER_HTML ??
       '<iframe src="https://coupa.ng/cpv5uY" width="100%" height="75" frameborder="0" scrolling="no" referrerpolicy="unsafe-url"></iframe>',
   },
+
+  // 콘텐츠 내 "가신" 언급을 클릭 가능한 링크로 연결할 URL
+  gasynLinkUrl: process.env.GASYN_LINK_URL ?? 'https://gasin.shop',
 };

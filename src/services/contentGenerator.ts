@@ -96,6 +96,25 @@ export function ensureReadableStyles(html: string): string {
   });
 }
 
+/**
+ * 본문에 등장하는 "가신"(운영자의 쿠팡 가격 추적 서비스) 언급을 실제 서비스로
+ * 클릭해서 이동할 수 있는 링크로 변환한다. 이미 링크(<a>) 안에 있는 부분은
+ * 건드리지 않고, 과도한 링크 도배를 피하기 위해 본문에서 처음 등장하는
+ * "가신" 한 곳만 링크로 변환한다.
+ */
+export function linkifyGasyn(html: string): string {
+  const linkUrl = env.gasynLinkUrl;
+  if (!linkUrl) return html;
+
+  let replaced = false;
+  return html.replace(/(<a\b[^>]*>[\s\S]*?<\/a>)|(가신)/gi, (match, anchorBlock, plain) => {
+    if (anchorBlock) return anchorBlock;
+    if (!plain || replaced) return match;
+    replaced = true;
+    return `<a href="${linkUrl}" target="_blank" rel="noopener noreferrer">${plain}</a>`;
+  });
+}
+
 /** Claude 응답에서 JSON만 안전하게 추출/파싱한다 (코드블록으로 감싸져 오는 경우 대비) */
 function parseGeneratedJson(raw: string): GeneratedContent {
   let text = raw.trim();
@@ -121,7 +140,7 @@ function parseGeneratedJson(raw: string): GeneratedContent {
   return {
     title: String(data.title),
     summary: String(data.summary ?? ''),
-    content: ensureReadableStyles(String(data.content)),
+    content: linkifyGasyn(ensureReadableStyles(String(data.content))),
     tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
   };
 }
